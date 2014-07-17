@@ -56,23 +56,13 @@ func (s *stepRun) Cleanup(state multistep.StateBag) {
 
 func getCommandArgs(bootDrive string, state multistep.StateBag) ([]string, error) {
 	config := state.Get("config").(*config)
-	isoPath := state.Get("iso_path").(string)
-	vncPort := state.Get("vnc_port").(uint)
 	sshHostPort := state.Get("sshHostPort").(uint)
 	ui := state.Get("ui").(packer.Ui)
 
-	guiArgument := "sdl"
-	vnc := fmt.Sprintf("0.0.0.0:%d", vncPort-5900)
+	guiArgument := "none"
 	vmName := config.VMName
 	imgPath := filepath.Join(config.OutputDir,
 		fmt.Sprintf("%s.%s", vmName, strings.ToLower(config.Format)))
-
-	if config.Headless == true {
-		ui.Message("WARNING: The VM will be started in headless mode, as configured.\n" +
-			"In headless mode, errors during the boot sequence or OS setup\n" +
-			"won't be easily visible. Use at your own discretion.")
-		guiArgument = "none"
-	}
 
 	defaultArgs := make(map[string]string)
 	defaultArgs["-name"] = vmName
@@ -81,11 +71,9 @@ func getCommandArgs(bootDrive string, state multistep.StateBag) ([]string, error
 	defaultArgs["-netdev"] = "user,id=user.0"
 	defaultArgs["-device"] = fmt.Sprintf("%s,netdev=user.0", config.NetDevice)
 	defaultArgs["-drive"] = fmt.Sprintf("file=%s,if=%s", imgPath, config.DiskInterface)
-	defaultArgs["-cdrom"] = isoPath
 	defaultArgs["-boot"] = bootDrive
 	defaultArgs["-m"] = "512m"
 	defaultArgs["-redir"] = fmt.Sprintf("tcp:%v::22", sshHostPort)
-	defaultArgs["-vnc"] = vnc
 
 	// Determine if we have a floppy disk to attach
 	if floppyPathRaw, ok := state.GetOk("floppy_path"); ok {

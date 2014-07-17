@@ -10,9 +10,9 @@ import (
 
 // This step creates the virtual disk that will be used as the
 // hard drive for the virtual machine.
-type stepCreateDisk struct{}
+type stepCopyDisk struct{}
 
-func (s *stepCreateDisk) Run(state multistep.StateBag) multistep.StepAction {
+func (s *stepCopyDisk) Run(state multistep.StateBag) multistep.StepAction {
 	config := state.Get("config").(*config)
 	driver := state.Get("driver").(Driver)
 	ui := state.Get("ui").(packer.Ui)
@@ -20,12 +20,13 @@ func (s *stepCreateDisk) Run(state multistep.StateBag) multistep.StepAction {
 		strings.ToLower(config.Format)))
 
 	command := []string{
-		"resize",
+		"convert",
+        "-f", config.Format,
+        "/home/iweb/ubuntu-14.04-server-cloudimg-amd64-disk1.img",
 		path,
-		fmt.Sprintf("%vM", config.DiskSize),
 	}
 
-	ui.Say("Creating hard drive...")
+	ui.Say("Copying hard drive...")
 	if err := driver.QemuImg(command...); err != nil {
 		err := fmt.Errorf("Error creating hard drive: %s", err)
 		state.Put("error", err)
@@ -36,4 +37,4 @@ func (s *stepCreateDisk) Run(state multistep.StateBag) multistep.StepAction {
 	return multistep.ActionContinue
 }
 
-func (s *stepCreateDisk) Cleanup(state multistep.StateBag) {}
+func (s *stepCopyDisk) Cleanup(state multistep.StateBag) {}

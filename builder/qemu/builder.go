@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -60,13 +59,9 @@ type config struct {
 	DiskSize        uint       `mapstructure:"disk_size"`
 	FloppyFiles     []string   `mapstructure:"floppy_files"`
 	Format          string     `mapstructure:"format"`
-	Headless        bool       `mapstructure:"headless"`
 	HTTPDir         string     `mapstructure:"http_directory"`
 	HTTPPortMin     uint       `mapstructure:"http_port_min"`
 	HTTPPortMax     uint       `mapstructure:"http_port_max"`
-	ISOChecksum     string     `mapstructure:"iso_checksum"`
-	ISOChecksumType string     `mapstructure:"iso_checksum_type"`
-	ISOUrls         []string   `mapstructure:"iso_urls"`
 	NetDevice       string     `mapstructure:"net_device"`
 	OutputDir       string     `mapstructure:"output_directory"`
 	QemuArgs        [][]string `mapstructure:"qemuargs"`
@@ -78,15 +73,12 @@ type config struct {
 	SSHPort         uint       `mapstructure:"ssh_port"`
 	SSHUser         string     `mapstructure:"ssh_username"`
 	SSHKeyPath      string     `mapstructure:"ssh_key_path"`
-	VNCPortMin      uint       `mapstructure:"vnc_port_min"`
-	VNCPortMax      uint       `mapstructure:"vnc_port_max"`
 	VMName          string     `mapstructure:"vm_name"`
 
 	// TODO(mitchellh): deprecate
 	RunOnce bool `mapstructure:"run_once"`
 
 	RawBootWait        string `mapstructure:"boot_wait"`
-	RawSingleISOUrl    string `mapstructure:"iso_url"`
 	RawShutdownTimeout string `mapstructure:"shutdown_timeout"`
 	RawSSHWaitTimeout  string `mapstructure:"ssh_wait_timeout"`
 
@@ -151,14 +143,6 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 		b.config.SSHPort = 22
 	}
 
-	if b.config.VNCPortMin == 0 {
-		b.config.VNCPortMin = 5900
-	}
-
-	if b.config.VNCPortMax == 0 {
-		b.config.VNCPortMax = 6000
-	}
-
 	for i, args := range b.config.QemuArgs {
 		for j, arg := range args {
 			if err := b.config.tpl.Validate(arg); err != nil {
@@ -191,9 +175,6 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 	// Errors
 	templates := map[string]*string{
 		"http_directory":    &b.config.HTTPDir,
-		"iso_checksum":      &b.config.ISOChecksum,
-		"iso_checksum_type": &b.config.ISOChecksumType,
-		"iso_url":           &b.config.RawSingleISOUrl,
 		"output_directory":  &b.config.OutputDir,
 		"shutdown_command":  &b.config.ShutdownCommand,
 		"ssh_key_path":      &b.config.SSHKeyPath,
@@ -215,15 +196,6 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 		if err != nil {
 			errs = packer.MultiErrorAppend(
 				errs, fmt.Errorf("Error processing %s: %s", n, err))
-		}
-	}
-
-	for i, url := range b.config.ISOUrls {
-		var err error
-		b.config.ISOUrls[i], err = b.config.tpl.Process(url, nil)
-		if err != nil {
-			errs = packer.MultiErrorAppend(
-				errs, fmt.Errorf("Error processing iso_urls[%d]: %s", i, err))
 		}
 	}
 
@@ -267,43 +239,6 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 	if b.config.HTTPPortMin > b.config.HTTPPortMax {
 		errs = packer.MultiErrorAppend(
 			errs, errors.New("http_port_min must be less than http_port_max"))
-	}
-
-	if b.config.ISOChecksum == "" {
-		errs = packer.MultiErrorAppend(
-			errs, errors.New("Due to large file sizes, an iso_checksum is required"))
-	} else {
-		b.config.ISOChecksum = strings.ToLower(b.config.ISOChecksum)
-	}
-
-	if b.config.ISOChecksumType == "" {
-		errs = packer.MultiErrorAppend(
-			errs, errors.New("The iso_checksum_type must be specified."))
-	} else {
-		b.config.ISOChecksumType = strings.ToLower(b.config.ISOChecksumType)
-		if h := common.HashForType(b.config.ISOChecksumType); h == nil {
-			errs = packer.MultiErrorAppend(
-				errs,
-				fmt.Errorf("Unsupported checksum type: %s", b.config.ISOChecksumType))
-		}
-	}
-
-	if b.config.RawSingleISOUrl == "" && len(b.config.ISOUrls) == 0 {
-		errs = packer.MultiErrorAppend(
-			errs, errors.New("One of iso_url or iso_urls must be specified."))
-	} else if b.config.RawSingleISOUrl != "" && len(b.config.ISOUrls) > 0 {
-		errs = packer.MultiErrorAppend(
-			errs, errors.New("Only one of iso_url or iso_urls may be specified."))
-	} else if b.config.RawSingleISOUrl != "" {
-		b.config.ISOUrls = []string{b.config.RawSingleISOUrl}
-	}
-
-	for i, url := range b.config.ISOUrls {
-		b.config.ISOUrls[i], err = common.DownloadableURL(url)
-		if err != nil {
-			errs = packer.MultiErrorAppend(
-				errs, fmt.Errorf("Failed to parse iso_url %d: %s", i+1, err))
-		}
 	}
 
 	if !b.config.PackerForce {
@@ -360,11 +295,6 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 			errs, fmt.Errorf("Failed parsing ssh_wait_timeout: %s", err))
 	}
 
-	if b.config.VNCPortMin > b.config.VNCPortMax {
-		errs = packer.MultiErrorAppend(
-			errs, fmt.Errorf("vnc_port_min must be less than vnc_port_max"))
-	}
-
 	if b.config.QemuArgs == nil {
 		b.config.QemuArgs = make([][]string, 0)
 	}
@@ -384,27 +314,19 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 	}
 
 	steps := []multistep.Step{
-		&common.StepDownload{
-			Checksum:     b.config.ISOChecksum,
-			ChecksumType: b.config.ISOChecksumType,
-			Description:  "ISO",
-			ResultKey:    "iso_path",
-			Url:          b.config.ISOUrls,
-		},
 		new(stepPrepareOutputDir),
 		&common.StepCreateFloppy{
 			Files: b.config.FloppyFiles,
 		},
+		new(stepCopyDisk),
 		new(stepCreateDisk),
 		new(stepHTTPServer),
 		new(stepForwardSSH),
-		new(stepConfigureVNC),
 		&stepRun{
 			BootDrive: "once=d",
 			Message:   "Starting VM, booting from CD-ROM",
 		},
 		&stepBootWait{},
-		&stepTypeBootCommand{},
 		&common.StepConnectSSH{
 			SSHAddress:     sshAddress,
 			SSHConfig:      sshConfig,
